@@ -137,6 +137,34 @@ Fuzzers
     deleting pending objects, and flushing pending orphans.  The module
     docstring has the full list.
 
+``orm-strategies``
+    Random statements whose shape makes eager loading rewrite the query
+    (``LIMIT`` / ``OFFSET``, ``DISTINCT``, joining and filtering along a
+    relationship that is also eagerly loaded, ``ORDER BY`` on a related
+    column) against plain, ``aliased()`` and ``with_polymorphic()``
+    entities of a mapping with relationships into and out of an
+    inheritance hierarchy, a many-to-many and a self-referential tree.
+    Checks that each statement loads the same objects whichever loader
+    strategy each relationship uses:
+
+    * **mapping**: with relationships configured ``lazy="joined"``,
+      ``"selectin"``, ``"subquery"``, ``"immediate"`` or a mix, with
+      ``join_depth`` on the self-referential ones
+    * **options**: with a random tree of loader options (``joinedload``,
+      ``selectinload``, ``subqueryload``, ``immediateload``, ``lazyload``,
+      ``defaultload``, ``of_type()``, ``relationship.and_()``, ``defer`` /
+      ``undefer`` / ``load_only``)
+    * **raises**: a statement that works with lazy loading must not raise
+      with other strategies
+    * **loops**: nor load in an endless loop
+
+    The comparison is against the same statement with everything lazy
+    loaded, using the object graph after accessing every attribute to a
+    fixed depth, lazy loading whatever wasn't loaded: the identities,
+    column values and related objects of each object, in order where the
+    relationship has ``order_by``.  SQL statement counts aren't compared,
+    as they legitimately differ between strategies.
+
 
 Bugs found
 ----------

@@ -36,12 +36,14 @@ A fuzzer is a module providing:
 from . import core_cache_key
 from . import orm_evaluate
 from . import orm_loading
+from . import orm_strategies
 from . import orm_unit_of_work
 
 FUZZERS = {
     fuzzer.NAME: fuzzer
     for fuzzer in (
         orm_loading,
+        orm_strategies,
         orm_evaluate,
         core_cache_key,
         orm_unit_of_work,
