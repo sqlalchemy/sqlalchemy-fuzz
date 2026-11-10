@@ -64,6 +64,39 @@ Fuzzers
     SET values depends on ``PYTHONHASHSEED``, so the workflow sets it to
     ``0``; replay with ``PYTHONHASHSEED=0`` to see the same results.
 
+``core-cache-key``
+    Random Core statements: joins and outer joins, subqueries, scalar,
+    ``EXISTS`` and ``IN`` subqueries, CTEs (recursive and nesting),
+    ``correlate()`` / ``correlate_except()``, ``lateral()``, set
+    operations, ``with_only_columns()``, label styles, ``cast()`` /
+    ``type_coerce()``, ``literal_column()``, ``text()`` and
+    ``TextualSelect``, ``values()``, ``literal_execute`` and expanding
+    parameters, ``.params()``, and ``insert()`` / ``update()`` /
+    ``delete()`` with ``RETURNING``.  Each statement is built again for
+    each use, with new alias, subquery and ``table()`` objects, alongside
+    a variant with only literal values changed and variants with one
+    structural change each.  Checks that the statement:
+
+    * **collision**: compiles the same as each variant that has the same
+      cache key: SQL, result columns, parameter types and
+      ``literal_execute`` parameters, on the SQLite, PostgreSQL, MySQL and
+      SQL Server dialects
+    * **anon_labels**: also numbers its anonymous labels, which become
+      result keys, the same as those variants
+    * **literal_key**: has the same cache key as the variant with only
+      literal values changed
+    * **params**: gets the same parameters from the compiled form of an
+      equal-key statement, as the compiled cache gives it, as when it's
+      compiled on its own
+    * **execution**: returns the same rows on SQLite (and for DML leaves
+      the same table contents) when run after its variants on the same
+      cache as with the compiled cache disabled
+
+    A cache key that changes for a structural change while the SQL stays
+    the same is only a missed cache hit, and isn't reported.  Anonymous
+    parameter names, which aren't part of the cache key, are compared by
+    position.
+
 
 Bugs found
 ----------

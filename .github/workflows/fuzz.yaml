@@ -62,6 +62,7 @@ jobs:
         fuzzer:
           - orm-loading
           - orm-evaluate
+          - core-cache-key
     env:
       # some SQLAlchemy behavior depends on the iteration order of sets of
       # strings (orm-evaluate: the order SET values are evaluated in), so
