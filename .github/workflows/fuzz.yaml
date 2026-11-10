@@ -7,14 +7,19 @@ name: Fuzz
 # src/sqlalchemy_fuzz/issues.py).  see README.rst for why this runs every
 # week.
 #
-# a push to main that changes the fuzzers also runs them, on the fixed
-# seeds only and without filing issues, so a new or changed fuzzer gets a
-# run to link to right away.
+# every run tests a fixed range of seeds, whose result only changes when
+# SQLAlchemy or the fuzzer changes, plus as many seeds again sampled at
+# random from outside it, to keep looking for new bugs.  the sampling is
+# seeded with the run id, so main and rel_2_0 get the same seeds and a
+# rerun of a job repeats them.
+#
+# a push to main that changes the fuzzers also runs them, without filing
+# issues, so a new or changed fuzzer gets a run to link to right away.
 #
 # run from the Actions tab or with:
 #
 #   gh workflow run fuzz.yaml -R sqlalchemy/sqlalchemy-fuzz \
-#       -f seeds=0:20000 -f refs='["main"]'
+#       -f seeds=0:20000 -f sample=20000 -f refs='["main"]'
 on:
   schedule:
     # mondays at 06:00 UTC
@@ -29,9 +34,17 @@ on:
   workflow_dispatch:
     inputs:
       seeds:
-        description: "range of seeds, e.g. 0:20000"
+        description: "fixed range of seeds, e.g. 0:20000"
         required: true
         default: "0:20000"
+      sample:
+        description: "number of seeds to sample outside the fixed range"
+        required: true
+        default: "20000"
+      sample_seed:
+        description: "seed for the sampling, to repeat a run; default: run id"
+        required: false
+        default: ""
       refs:
         description: "SQLAlchemy refs to test, as a JSON list"
         required: true
@@ -107,26 +120,18 @@ jobs:
           echo "SQLALCHEMY_REF=$REF" >> "$GITHUB_ENV"
           mkdir results
 
-      - name: Run on fixed seeds
+      - name: Run on fixed and sampled seeds
         env:
           SEEDS: ${{ inputs.seeds || '0:20000' }}
+          SAMPLE: ${{ inputs.sample || '20000' }}
+          SAMPLE_SEED: ${{ inputs.sample_seed || github.run_id }}
           FUZZER: ${{ matrix.fuzzer }}
         run: |
           .venv/bin/sqla-fuzz "$FUZZER" \
-            --seeds "$SEEDS" --markdown "$GITHUB_STEP_SUMMARY" \
-            --json "results/$FUZZER-$SQLALCHEMY_REF-fixed.json"
-
-      - name: Run on this week's seeds
-        # runs even if the fixed seeds found something
-        if: ${{ !cancelled() && github.event_name == 'schedule' }}
-        env:
-          FUZZER: ${{ matrix.fuzzer }}
-        run: |
-          week=$(( $(date +%s) / 604800 ))
-          lo=$(( 20000 + (week % 10000) * 20000 ))
-          .venv/bin/sqla-fuzz "$FUZZER" \
-            --seeds "$lo:$(( lo + 20000 ))" --markdown "$GITHUB_STEP_SUMMARY" \
-            --json "results/$FUZZER-$SQLALCHEMY_REF-weekly.json"
+            --seeds "$SEEDS" \
+            --sample "$SAMPLE" --sample-seed "$SAMPLE_SEED" \
+            --markdown "$GITHUB_STEP_SUMMARY" \
+            --json "results/$FUZZER-$SQLALCHEMY_REF.json"
 
       - name: Upload results
         if: ${{ !cancelled() }}

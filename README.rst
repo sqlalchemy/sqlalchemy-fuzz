@@ -198,22 +198,29 @@ cache key generation or a loader strategy could break a combination that
 no test covers, and nothing else would notice.
 
 So the `Fuzz workflow <.github/workflows/fuzz.yaml>`_ runs every Monday
-against SQLAlchemy ``main`` and ``rel_2_0``, and does two things:
+against SQLAlchemy ``main`` and ``rel_2_0``, and does two things in each
+run:
 
 * Runs a fixed range of seeds, ``0:20000``.  The result only changes when
   SQLAlchemy or the fuzzer changes, so a failure after a green run means
   something merged that week broke loading.
-* Runs a different range of seeds each week, to keep looking for bugs that
-  the fixed range has not reached.  A failure only here is more likely an
-  existing bug than a new one.
+* Runs 20000 more seeds, sampled at random from the first billion and
+  distinct from the fixed range, to keep looking for bugs that the fixed
+  range has not reached.  Each check in the report says how many of its
+  failing seeds are in the fixed range; a check failing only on sampled
+  seeds is more likely an existing bug than a new one.  The sampling is
+  seeded with the run id, so ``main`` and ``rel_2_0`` get the same seeds,
+  and the report gives the command that runs them again.
 
-A push to ``main`` that changes the fuzzers also runs the fixed range,
-without filing issues, so a new or changed fuzzer gets a run right away.
+A push to ``main`` that changes the fuzzers runs the same seeds, without
+filing issues, so a new or changed fuzzer gets a run right away.
 
 It can also be run by hand from the Actions tab, or with::
 
     gh workflow run fuzz.yaml -R sqlalchemy/sqlalchemy-fuzz \
-        -f seeds=0:20000 -f refs='["main"]'
+        -f seeds=0:20000 -f sample=20000 -f refs='["main"]'
+
+``-f sample_seed=N`` repeats an earlier run's sampled seeds.
 
 
 Running locally
@@ -230,7 +237,9 @@ a release::
 
     .venv/bin/sqla-fuzz orm-loading --seeds 0:20000
 
-``--procs`` sets the number of worker processes (default: one per CPU);
+``--sample N`` also runs N seeds sampled from outside that range, as the
+workflow does; the report shows the ``--sample-seed`` that runs the same
+ones again.  ``--procs`` sets the number of worker processes (default: one per CPU);
 20000 seeds take a few seconds on 8 cores.  The exit status is 1 if
 anything was found.  ``--markdown FILE`` appends the report to a file,
 which the workflow uses for the run summary.

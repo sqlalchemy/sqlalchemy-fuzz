@@ -18,6 +18,35 @@ def replay_command(summary, seed):
     return f"sqla-fuzz {summary['fuzzer']} --replay {seed}"
 
 
+def run_command(summary):
+    """Command that runs the same seeds again."""
+    lo, hi = summary["seeds"]
+    cmd = f"sqla-fuzz {summary['fuzzer']} --seeds {lo}:{hi}"
+    sample = summary.get("sample")
+    if sample:
+        cmd += f" --sample {sample['count']} --sample-seed {sample['seed']}"
+    return cmd
+
+
+def seeds_text(summary):
+    """e.g. 'seeds `0:20000` and 20000 sampled seeds'"""
+    lo, hi = summary["seeds"]
+    parts = [f"seeds `{lo}:{hi}`"] if hi > lo else []
+    sample = summary.get("sample")
+    if sample:
+        parts.append(f"{sample['count']} sampled seeds")
+    return " and ".join(parts) or "no seeds"
+
+
+def count_text(summary, info):
+    """e.g. '12 seeds, 3 of them in `0:20000`'"""
+    text = f"{info['count']} seeds"
+    lo, hi = summary["seeds"]
+    if summary.get("sample") and hi > lo:
+        text += f", {info['fixed']} of them in `{lo}:{hi}`"
+    return text
+
+
 def render_check(summary, check):
     """Markdown lines for one failed check."""
     info = summary["failed"][check]
@@ -53,7 +82,6 @@ def render_check(summary, check):
 
 def render_markdown(summary):
     stats = summary["stats"]
-    lo, hi = summary["seeds"]
     lines = [
         f"## {summary['fuzzer']}: {summary['description']}",
         "",
@@ -67,9 +95,10 @@ def render_markdown(summary):
             "",
         ]
     lines += [
-        f"Seeds `{lo}:{hi}`: {stats['diff']} with differences, "
-        f"{stats['ok']} OK, {stats['invalid']} skipped as invalid, "
-        f"{stats['crash']} crashed.",
+        f"{seeds_text(summary).capitalize()}: {stats['diff']} with "
+        f"differences, {stats['ok']} OK, {stats['invalid']} skipped as "
+        f"invalid, {stats['crash']} crashed.  `{run_command(summary)}` "
+        "runs the same seeds again.",
         "",
         "Each seed is one generated scenario, run through every check.  "
         "Seeds are listed under each check that they fail, so the "
@@ -82,7 +111,7 @@ def render_markdown(summary):
         lines += ["No differences found.", ""]
 
     for check, info in summary["failed"].items():
-        lines += [f"### {check}: {info['count']} seeds", ""]
+        lines += [f"### {check}: {count_text(summary, info)}", ""]
         lines += render_check(summary, check)
 
     if stats["crash"]:

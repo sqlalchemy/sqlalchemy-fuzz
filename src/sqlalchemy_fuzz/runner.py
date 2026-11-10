@@ -1,16 +1,41 @@
-"""Runs a fuzzer over a range of seeds and summarizes the results."""
+"""Runs a fuzzer over a set of seeds and summarizes the results."""
 
 from __future__ import annotations
 
 import collections
 import multiprocessing
 import os
+import random
 
 import sqlalchemy
 
+# seeds sampled with --sample are drawn from range(SEED_SPACE), unless the
+# fuzzer enumerates fewer cases (its CASES)
+SEED_SPACE = 10**9
 
-def run_seeds(fuzzer, lo, hi, procs=None):
-    """Run ``fuzzer.trial`` for each seed in ``lo:hi``.
+
+def sample_seeds(fuzzer, count, sample_seed, fixed):
+    """Return ``count`` distinct seeds outside the ``fixed`` range.
+
+    The seeds depend only on ``sample_seed``, so a run can be repeated.
+
+    """
+    lo, hi = fixed
+    space = getattr(fuzzer, "CASES", SEED_SPACE)
+    count = min(count, space - max(0, min(hi, space) - max(lo, 0)))
+    rng = random.Random(sample_seed)
+    seeds = set()
+    while len(seeds) < count:
+        seeds.update(
+            seed
+            for seed in rng.sample(range(space), count - len(seeds))
+            if not lo <= seed < hi
+        )
+    return sorted(seeds)
+
+
+def run_seeds(fuzzer, seeds, procs=None):
+    """Run ``fuzzer.trial`` for each seed in ``seeds``.
 
     Returns ``(stats, findings, invalid, crashes)``.
 
@@ -21,7 +46,7 @@ def run_seeds(fuzzer, lo, hi, procs=None):
     invalid = collections.Counter()
     with multiprocessing.Pool(procs, initializer=fuzzer.init_worker) as pool:
         for seed, status, info in pool.imap_unordered(
-            fuzzer.trial, range(lo, hi), chunksize=20
+            fuzzer.trial, seeds, chunksize=20
         ):
             stats[status] += 1
             if status == "diff":
@@ -50,8 +75,14 @@ def describe_target():
     }
 
 
-def summarize(fuzzer, lo, hi, stats, findings, invalid, crashes, show):
-    """Return a JSON-serializable summary of a run."""
+def summarize(fuzzer, fixed, sample, stats, findings, invalid, crashes, show):
+    """Return a JSON-serializable summary of a run.
+
+    ``fixed`` is the ``(lo, hi)`` range of fixed seeds, ``sample`` is
+    ``{"count": n, "seed": sample_seed}`` or None.
+
+    """
+    lo, hi = fixed
 
     # a seed that fails more than one check is listed under each of them
     by_check = collections.defaultdict(list)
@@ -77,6 +108,9 @@ def summarize(fuzzer, lo, hi, stats, findings, invalid, crashes, show):
         counts = collections.Counter(x for _, f, _, _ in items for x in f)
         failed[check] = {
             "count": len(items),
+            # failures in the fixed range point at a recent change, rather
+            # than at an older bug that was sampled for the first time
+            "fixed": sum(1 for seed, _, _, _ in items if lo <= seed < hi),
             "by_mapping": {
                 m: mapping_counts[m]
                 for m in mappings_order
@@ -98,6 +132,7 @@ def summarize(fuzzer, lo, hi, stats, findings, invalid, crashes, show):
         "target": describe_target(),
         "fuzz_sha": os.environ.get("SQLALCHEMY_FUZZ_SHA"),
         "seeds": [lo, hi],
+        "sample": sample,
         "stats": {
             key: stats[key] for key in ("diff", "ok", "invalid", "crash")
         },

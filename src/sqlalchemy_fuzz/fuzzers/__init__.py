@@ -16,6 +16,11 @@ A fuzzer is a module providing:
     names that may appear in brackets after a check name, e.g.
     ``repeat[default]``, in the order they should be reported
 
+``CASES`` (optional)
+    for a fuzzer that enumerates its scenarios, the number of them; seed N
+    is case N, and ``--sample`` draws seeds from ``range(CASES)`` rather
+    than from the first billion
+
 ``init_worker()``
     called once in each worker process before running seeds
 

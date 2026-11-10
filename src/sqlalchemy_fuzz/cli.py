@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 
 from . import report
 from . import runner
@@ -17,8 +18,8 @@ def _seed_range(text):
         raise argparse.ArgumentTypeError(
             f"expected a range like 0:20000, got {text!r}"
         )
-    if hi <= lo:
-        raise argparse.ArgumentTypeError(f"empty range {text!r}")
+    if hi < lo:
+        raise argparse.ArgumentTypeError(f"backwards range {text!r}")
     return lo, hi
 
 
@@ -45,13 +46,29 @@ def make_parser():
             type=_seed_range,
             default=(0, 5000),
             metavar="LO:HI",
-            help="range of seeds to run (default 0:5000)",
+            help="fixed range of seeds to run (default 0:5000); 0:0 runs "
+            "none, e.g. to run only sampled seeds",
         )
         group.add_argument(
             "--replay",
             type=int,
             metavar="SEED",
             help="run one seed, printing the scenario and differences",
+        )
+        sub.add_argument(
+            "--sample",
+            type=int,
+            default=0,
+            metavar="N",
+            help="also run N distinct seeds sampled from outside the fixed "
+            "range (default 0)",
+        )
+        sub.add_argument(
+            "--sample-seed",
+            type=int,
+            metavar="SEED",
+            help="seed for sampling the --sample seeds, to run the same "
+            "ones again (default: random, shown in the report)",
         )
         sub.add_argument(
             "--procs",
@@ -80,20 +97,42 @@ def make_parser():
 
 
 def main(argv=None):
-    args = make_parser().parse_args(argv)
+    parser = make_parser()
+    args = parser.parse_args(argv)
     fuzzer = FUZZERS[args.fuzzer]
 
     if args.replay is not None:
+        if args.sample or args.sample_seed is not None:
+            parser.error("--replay runs one seed; it takes no --sample")
         print(f"Testing {report.target_text(runner.describe_target())}.")
         fuzzer.replay(args.replay)
         return 0
 
     lo, hi = args.seeds
+    seeds = list(range(lo, hi))
+    sample = None
+    if args.sample > 0:
+        sample_seed = args.sample_seed
+        if sample_seed is None:
+            sample_seed = random.SystemRandom().randrange(runner.SEED_SPACE)
+        sampled = runner.sample_seeds(
+            fuzzer, args.sample, sample_seed, args.seeds
+        )
+        seeds += sampled
+        sample = {"count": len(sampled), "seed": sample_seed}
+
     stats, findings, invalid, crashes = runner.run_seeds(
-        fuzzer, lo, hi, args.procs
+        fuzzer, seeds, args.procs
     )
     summary = runner.summarize(
-        fuzzer, lo, hi, stats, findings, invalid, crashes, args.show
+        fuzzer,
+        args.seeds,
+        sample,
+        stats,
+        findings,
+        invalid,
+        crashes,
+        args.show,
     )
     text = report.render_markdown(summary)
     print(text)

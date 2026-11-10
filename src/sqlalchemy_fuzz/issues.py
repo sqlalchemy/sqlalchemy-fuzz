@@ -112,11 +112,11 @@ class GitHub:
 def render_findings(summaries, check, run_url):
     lines = [f"Run: {run_url}", ""]
     for summary in summaries:
-        lo, hi = summary["seeds"]
         target = report.target_text(summary["target"])
+        seeds = report.seeds_text(summary)
         if check == "crash":
             lines += [
-                f"#### {target}, seeds `{lo}:{hi}`: "
+                f"#### {target}, {seeds}: "
                 f"{summary['stats']['crash']} seeds crashed",
                 "",
             ]
@@ -131,11 +131,15 @@ def render_findings(summaries, check, run_url):
             continue
         info = summary["failed"][check]
         lines += [
-            f"#### {target}, seeds `{lo}:{hi}`: {info['count']} seeds",
+            f"#### {target}, {seeds}: {report.count_text(summary, info)}",
             "",
         ]
         if summary["fuzz_sha"]:
             lines += [f"sqlalchemy-fuzz commit `{summary['fuzz_sha']}`.", ""]
+        lines += [
+            f"`{report.run_command(summary)}` runs the same seeds again.",
+            "",
+        ]
         lines += report.render_check(summary, check)
     return "\n".join(lines)
 
