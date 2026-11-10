@@ -212,6 +212,24 @@ run:
   seeded with the run id, so ``main`` and ``rel_2_0`` get the same seeds,
   and the report gives the command that runs them again.
 
+The weekly run files what it finds as issues in this repo, one per fuzzer
+and check, and keeps them up to date:
+
+* a check that keeps failing gets a comment on its open issue each week,
+  not a new issue
+* once a finding is triaged, the SQLAlchemy issue it led to is linked
+  from the fuzz issue, as ``sqlalchemy/sqlalchemy#NNNN`` in a comment, or
+  by mentioning the fuzz issue from the SQLAlchemy issue
+* when the check passes on every branch tested and every linked
+  SQLAlchemy issue is closed, the run closes the fuzz issue; while a
+  linked issue is still open, it labels the fuzz issue ``fuzz-passing``
+  and waits
+* if the check fails again later, a new issue is opened that links to the
+  closed one
+
+So fixing the SQLAlchemy issue is enough; the fuzz issue closes itself on
+the next weekly run.
+
 A push to ``main`` that changes the fuzzers runs the same seeds, without
 filing issues, so a new or changed fuzzer gets a run right away.
 

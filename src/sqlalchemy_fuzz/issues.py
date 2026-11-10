@@ -7,8 +7,14 @@ wrote.  To keep a misbehaving fuzzer from flooding the tracker:
   label, e.g. ``orm-loading:repeat``; a check that fails again gets a
   comment on that issue, not a new one
 * at most ``--max-new`` issues are opened per run
-* issues are never closed automatically; when a check passes again, its
-  issue gets one comment saying so and the ``fuzz-passing`` label
+
+An issue tracks the SQLAlchemy issues it links to, as
+``sqlalchemy/sqlalchemy#NNNN`` in its body or comments, or by being
+mentioned from them.  Once its check passes on every SQLAlchemy branch in
+the run and every linked SQLAlchemy issue is closed, the issue is closed.
+While a linked issue is still open, it gets the ``fuzz-passing`` label and
+waits.  A check that fails again later gets a new issue, which links to
+the closed one.
 
 Uses the ``gh`` command line tool, authenticated through ``GH_TOKEN``.
 
@@ -19,6 +25,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import re
 import subprocess
 import sys
 
@@ -26,6 +33,14 @@ from . import report
 
 FINDING_LABEL = "fuzz-finding"
 PASSING_LABEL = "fuzz-passing"
+
+SQLALCHEMY_REPO = "sqlalchemy/sqlalchemy"
+
+# sqlalchemy/sqlalchemy#123, .../sqlalchemy/sqlalchemy/issues/123 or
+# /pull/123; not sqlalchemy/sqlalchemy-fuzz#123
+SQLALCHEMY_LINK = re.compile(
+    r"sqlalchemy/sqlalchemy(?:#|/issues/|/pull/)(\d+)"
+)
 
 INTRO = """\
 Filed by the weekly fuzz run.  This issue tracks the **{check}** check of \
@@ -37,8 +52,10 @@ several bugs, or a bug in the fuzzer.  To validate one, replay a seed \
 reproducer that doesn't use the fuzzer.  If it's a SQLAlchemy bug, open \
 an issue in sqlalchemy/sqlalchemy with that reproducer and link it here.
 
-Leave this issue open until the check passes.  Later runs comment here \
-rather than opening new issues, and say when the check passes again.
+Link the SQLAlchemy issue in a comment here as `sqlalchemy/sqlalchemy#NNNN`, \
+or mention this issue from it.  Later runs comment here rather than \
+opening new issues, and close this issue once the check passes and every \
+linked SQLAlchemy issue is closed.
 """
 
 
@@ -47,8 +64,10 @@ class GitHub:
         self.repo = repo
         self.dry_run = dry_run
 
-    def _gh(self, *args, body=None, write=False):
-        cmd = ["gh", *args, "--repo", self.repo]
+    def _gh(self, *args, body=None, write=False, repo=True):
+        cmd = ["gh", *args]
+        if repo:
+            cmd += ["--repo", self.repo]
         if body is not None:
             cmd += ["--body-file", "-"]
         if write and self.dry_run:
@@ -90,6 +109,56 @@ class GitHub:
             return None, set()
         issue = min(issues, key=lambda i: i["number"])
         return issue["number"], {lbl["name"] for lbl in issue["labels"]}
+
+    def last_closed_for(self, label):
+        out = self._gh(
+            "issue",
+            "list",
+            "--label",
+            label,
+            "--state",
+            "closed",
+            "--json",
+            "number",
+        )
+        issues = json.loads(out or "[]")
+        return max((i["number"] for i in issues), default=None)
+
+    def linked_issues(self, number):
+        """{number: state} of the SQLAlchemy issues an issue links to,
+        in its body or comments, or that mention it."""
+        out = self._gh("issue", "view", str(number), "--json", "body,comments")
+        issue = json.loads(out)
+        text = "\n".join(
+            [issue["body"]] + [c["body"] for c in issue["comments"]]
+        )
+        linked = {int(n) for n in SQLALCHEMY_LINK.findall(text)}
+        out = self._gh(
+            "api",
+            "--paginate",
+            f"repos/{self.repo}/issues/{number}/timeline",
+            "--jq",
+            '.[] | select(.event == "cross-referenced") '
+            "| .source.issue | select(.repository.full_name == "
+            f'"{SQLALCHEMY_REPO}") | .number',
+            repo=False,
+        )
+        linked.update(int(n) for n in out.split())
+        return {
+            n: self._gh(
+                "api",
+                f"repos/{SQLALCHEMY_REPO}/issues/{n}",
+                "--jq",
+                ".state",
+                repo=False,
+            ).strip()
+            for n in sorted(linked)
+        }
+
+    def close(self, number):
+        self._gh(
+            "issue", "close", str(number), "--reason", "completed", write=True
+        )
 
     def create(self, title, body, labels):
         args = ["issue", "create", "--title", title]
@@ -144,13 +213,19 @@ def render_findings(summaries, check, run_url):
     return "\n".join(lines)
 
 
-def file_issues(summaries, gh, run_url, max_new):
+def _issue_list(numbers):
+    return ", ".join(f"{SQLALCHEMY_REPO}#{n}" for n in numbers)
+
+
+def file_issues(summaries, gh, run_url, max_new, refs_tested):
     failing = collections.defaultdict(list)
     ran = set()
+    refs = collections.defaultdict(set)
     descriptions = {}
     subjects = {}
     for summary in summaries:
         fuzzer = summary["fuzzer"]
+        refs[fuzzer].add(summary["target"]["ref"])
         subjects[fuzzer] = summary.get("subject", "statement")
         for check, description in summary["checks"].items():
             ran.add((fuzzer, check))
@@ -169,6 +244,10 @@ def file_issues(summaries, gh, run_url, max_new):
         PASSING_LABEL, "the check has passed since this was filed", "0e8a16"
     )
 
+    # a check only counts as passing if its fuzzer reported on every
+    # branch tested, not if the job for one branch failed
+    refs_tested = set(refs_tested)
+
     new = 0
     status = 0
     for key in sorted(ran):
@@ -177,12 +256,40 @@ def file_issues(summaries, gh, run_url, max_new):
         number, labels = gh.open_issue_for(label)
 
         if key not in failing:
-            if number is not None and PASSING_LABEL not in labels:
-                print(f"{label}: passing, noting on #{number}")
+            if number is None:
+                continue
+            if not refs_tested <= refs[fuzzer]:
+                print(
+                    f"{label}: passing, but not run on every branch; "
+                    f"leaving #{number}"
+                )
+                continue
+            branches = " and ".join(f"`{ref}`" for ref in sorted(refs_tested))
+            linked = gh.linked_issues(number)
+            still_open = [n for n, state in linked.items() if state == "open"]
+            if not still_open:
+                print(f"{label}: passing, closing #{number}")
+                text = f"No failures for this check on {branches} in {run_url}"
+                if linked:
+                    text += (
+                        ", and "
+                        + _issue_list(linked)
+                        + (" is closed" if len(linked) == 1 else " are closed")
+                    )
                 gh.comment(
                     number,
-                    f"No failures for this check in {run_url}.  Close "
-                    "this issue if the bugs it found are fixed.",
+                    text + ".  Closing; if the check fails again, a new "
+                    "issue will link back here.",
+                )
+                gh.close(number)
+            elif PASSING_LABEL not in labels:
+                print(f"{label}: passing, waiting on {still_open}")
+                gh.comment(
+                    number,
+                    f"No failures for this check on {branches} in "
+                    f"{run_url}.  Leaving this open until "
+                    + _issue_list(still_open)
+                    + " is closed.",
                 )
                 gh.edit_labels(number, add=[PASSING_LABEL])
             continue
@@ -210,6 +317,12 @@ def file_issues(summaries, gh, run_url, max_new):
                 subject=subjects[fuzzer],
                 description=descriptions[key],
             )
+            previous = gh.last_closed_for(label)
+            if previous is not None:
+                intro += (
+                    f"\nThis check failed before in #{previous}, which was "
+                    "closed once it passed; this may be a regression.\n"
+                )
             url = gh.create(
                 f"{fuzzer}: {check} check failing",
                 intro + "\n" + body,
@@ -236,6 +349,14 @@ def main(argv=None):
         "--run-url", required=True, help="link to the run, for the issues"
     )
     parser.add_argument(
+        "--refs",
+        type=json.loads,
+        default=["main", "rel_2_0"],
+        help="SQLAlchemy refs the run tested, as a JSON list; an issue is "
+        'only closed if its check passed on all of them (default \'["main", '
+        '"rel_2_0"]\')',
+    )
+    parser.add_argument(
         "--max-new",
         type=int,
         default=4,
@@ -255,7 +376,7 @@ def main(argv=None):
     summaries.sort(key=lambda s: (s["fuzzer"], s["target"]["ref"] or ""))
 
     gh = GitHub(args.repo, args.dry_run)
-    return file_issues(summaries, gh, args.run_url, args.max_new)
+    return file_issues(summaries, gh, args.run_url, args.max_new, args.refs)
 
 
 if __name__ == "__main__":

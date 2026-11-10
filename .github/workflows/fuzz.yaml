@@ -3,8 +3,9 @@ name: Fuzz
 # runs the fuzzers against SQLAlchemy main and rel_2_0.  differences are
 # listed in the run summary, each with a command that replays it locally;
 # a run fails if anything is found.  the weekly run then files the findings
-# as issues in this repo, at most one open issue per fuzzer and check (see
-# src/sqlalchemy_fuzz/issues.py).  see README.rst for why this runs every
+# as issues in this repo, at most one open issue per fuzzer and check, and
+# closes those whose check passes and whose SQLAlchemy issues are closed
+# (see src/sqlalchemy_fuzz/issues.py).  see README.rst for why this runs every
 # week.
 #
 # every run tests a fixed range of seeds, whose result only changes when
@@ -172,10 +173,11 @@ jobs:
       - name: File issues
         env:
           GH_TOKEN: ${{ github.token }}
+          REFS: ${{ inputs.refs || '["main", "rel_2_0"]' }}
           RUN_URL: >-
             ${{ github.server_url }}/${{ github.repository
             }}/actions/runs/${{ github.run_id }}
         run: |
           python -m pip install .
           sqla-fuzz-issues results/*.json \
-            --repo "$GITHUB_REPOSITORY" --run-url "$RUN_URL"
+            --repo "$GITHUB_REPOSITORY" --run-url "$RUN_URL" --refs "$REFS"
