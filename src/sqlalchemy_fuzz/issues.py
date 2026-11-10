@@ -29,7 +29,7 @@ PASSING_LABEL = "fuzz-passing"
 
 INTRO = """\
 Filed by the weekly fuzz run.  This issue tracks the **{check}** check of \
-the **{fuzzer}** fuzzer, which fails when the statement {description}.
+the **{fuzzer}** fuzzer, which fails when the {subject} {description}.
 
 The findings below are not validated: they may be a SQLAlchemy bug, \
 several bugs, or a bug in the fuzzer.  To validate one, replay a seed \
@@ -144,8 +144,10 @@ def file_issues(summaries, gh, run_url, max_new):
     failing = collections.defaultdict(list)
     ran = set()
     descriptions = {}
+    subjects = {}
     for summary in summaries:
         fuzzer = summary["fuzzer"]
+        subjects[fuzzer] = summary.get("subject", "statement")
         for check, description in summary["checks"].items():
             ran.add((fuzzer, check))
             descriptions[(fuzzer, check)] = description
@@ -199,7 +201,10 @@ def file_issues(summaries, gh, run_url, max_new):
                 label, f"fuzz findings for {fuzzer} / {check}", "fbca04"
             )
             intro = INTRO.format(
-                check=check, fuzzer=fuzzer, description=descriptions[key]
+                check=check,
+                fuzzer=fuzzer,
+                subject=subjects[fuzzer],
+                description=descriptions[key],
             )
             url = gh.create(
                 f"{fuzzer}: {check} check failing",

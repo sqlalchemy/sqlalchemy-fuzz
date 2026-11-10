@@ -21,7 +21,8 @@ def replay_command(summary, seed):
 def render_check(summary, check):
     """Markdown lines for one failed check."""
     info = summary["failed"][check]
-    lines = [f"The statement {summary['checks'][check]}.", ""]
+    subject = summary.get("subject", "statement")
+    lines = [f"The {subject} {summary['checks'][check]}.", ""]
     if info["by_mapping"]:
         lines += [
             "By mapping: "

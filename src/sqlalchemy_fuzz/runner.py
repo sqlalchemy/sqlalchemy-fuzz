@@ -93,6 +93,7 @@ def summarize(fuzzer, lo, hi, stats, findings, invalid, crashes, show):
     return {
         "fuzzer": fuzzer.NAME,
         "description": fuzzer.DESCRIPTION,
+        "subject": getattr(fuzzer, "SUBJECT", "statement"),
         "checks": dict(fuzzer.CHECKS),
         "target": describe_target(),
         "fuzz_sha": os.environ.get("SQLALCHEMY_FUZZ_SHA"),

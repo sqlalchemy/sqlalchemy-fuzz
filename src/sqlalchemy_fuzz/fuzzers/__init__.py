@@ -7,7 +7,10 @@ A fuzzer is a module providing:
 
 ``CHECKS``
     dict of check name -> description, completing the sentence
-    "The statement ..."; findings are reported per check
+    "The <SUBJECT> ..."; findings are reported per check
+
+``SUBJECT`` (optional)
+    what is generated, as in the sentence above; default ``"statement"``
 
 ``MAPPINGS`` (optional)
     names that may appear in brackets after a check name, e.g.
@@ -33,8 +36,14 @@ A fuzzer is a module providing:
 from . import core_cache_key
 from . import orm_evaluate
 from . import orm_loading
+from . import orm_unit_of_work
 
 FUZZERS = {
     fuzzer.NAME: fuzzer
-    for fuzzer in (orm_loading, orm_evaluate, core_cache_key)
+    for fuzzer in (
+        orm_loading,
+        orm_evaluate,
+        core_cache_key,
+        orm_unit_of_work,
+    )
 }

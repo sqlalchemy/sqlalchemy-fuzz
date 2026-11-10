@@ -97,6 +97,46 @@ Fuzzers
     parameter names, which aren't part of the cache key, are compared by
     position.
 
+``orm-unit-of-work``
+    Random sequences of session operations (add, delete, attribute
+    changes, many-to-one and collection changes, moving children between
+    parents, orphans, ``merge()``, ``expire()`` / ``refresh()``,
+    ``expunge()``, ``commit()``, ``begin_nested()`` released or rolled
+    back) against a mapping with cascades, ``post_update``, a
+    self-referential tree, many-to-many (one of them self-referential),
+    and joined and single table inheritance.  Each sequence is run
+    flushing after every operation (``flush_each``), flushing only where
+    needed (``flush_end``), and as ``flush_end`` without insertmanyvalues.
+    Checks that the sequence:
+
+    * **flush_timing**: leaves the same rows in ``flush_each`` and
+      ``flush_end``, and raises in both or neither
+    * **persisted**: after the final flush, leaves objects in the session
+      that match the rows
+    * **rollback**: after a SAVEPOINT rollback, leaves objects in the
+      session that match the rows, for the attributes that the
+      documentation says a rollback keeps
+    * **batching**: leaves the same rows with and without
+      ``use_insertmanyvalues``
+
+    Rows are read with plain SQL and compared by a ``tag`` column holding
+    each object's logical id, not by autoincrement primary key.  SQLite
+    enforces foreign keys, so statements emitted in an order the foreign
+    keys don't allow fail.
+
+    The generator avoids sequences that run into known or documented
+    limits of the unit of work, which would otherwise fail every week:
+    deleting a row and inserting one with the same primary key or unique
+    value in one flush (the "DELETE before INSERT" problem, `#2501
+    <https://github.com/sqlalchemy/sqlalchemy/issues/2501>`_; there are no
+    unique constraints, and SQLite never reuses an autoincrement key),
+    making a node the child of one of its former descendants in one flush
+    without ``post_update`` (`#1063
+    <https://github.com/sqlalchemy/sqlalchemy/issues/1063>`_), deleting
+    an object that a reference made since the last flush still points to,
+    deleting pending objects, and flushing pending orphans.  The module
+    docstring has the full list.
+
 
 Bugs found
 ----------
