@@ -49,7 +49,7 @@ Bugs found
   ``polymorphic_load="selectin"`` raises for loader options against an
   ``aliased()`` base entity
 
-See also `#13778 <https://github.com/sqlalchemy/sqlalchemy/issues/13778>`_.
+How this repo came about: `#1 <https://github.com/sqlalchemy/sqlalchemy-fuzz/issues/1>`_.
 
 
 Why this runs every week
