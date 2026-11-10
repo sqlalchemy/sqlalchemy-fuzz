@@ -1,0 +1,31 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Lint
+        run: |
+          python -m pip install black flake8 flake8-pyproject \
+            flake8-import-order
+          black --check src
+          flake8p src

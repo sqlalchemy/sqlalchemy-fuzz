@@ -1,0 +1,38 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=77.0.3"]
+
+[project]
+name = "sqlalchemy-fuzz"
+dynamic = ["version"]
+description = "Differential fuzzers for SQLAlchemy"
+readme = "README.rst"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+# SQLAlchemy itself is deliberately not a dependency: the fuzzers test
+# whichever SQLAlchemy is installed, normally a checkout of main or a
+# maintenance branch, and pip must not replace it with a release.
+dependencies = []
+
+[project.scripts]
+sqla-fuzz = "sqlalchemy_fuzz.cli:main"
+sqla-fuzz-issues = "sqlalchemy_fuzz.issues:main"
+
+[project.urls]
+Homepage = "https://github.com/sqlalchemy/sqlalchemy-fuzz"
+
+[tool.setuptools.dynamic]
+version = {attr = "sqlalchemy_fuzz.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 79
+target-version = ["py310"]
+
+[tool.flake8]
+max-line-length = 79
+import-order-style = "google"
+application-import-names = "sqlalchemy_fuzz"
