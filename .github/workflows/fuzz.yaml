@@ -44,6 +44,12 @@ jobs:
         ref: ${{ fromJSON(inputs.refs || '["main", "rel_2_0"]') }}
         fuzzer:
           - orm-loading
+          - orm-evaluate
+    env:
+      # some SQLAlchemy behavior depends on the iteration order of sets of
+      # strings (orm-evaluate: the order SET values are evaluated in), so
+      # fix the hash seed for runs of the same seeds to give the same result
+      PYTHONHASHSEED: "0"
 
     steps:
       - name: Checkout sqlalchemy-fuzz

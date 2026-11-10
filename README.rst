@@ -33,6 +33,37 @@ Fuzzers
     ``__dict__``, so nothing is lazy loaded) and the number of SQL
     statements emitted.
 
+``orm-evaluate``
+    ORM-enabled ``update()`` / ``delete()`` statements with random WHERE
+    criteria and SET values: comparisons (column to column, and against
+    ``None``), ``and_()`` / ``or_()`` / ``not_()``, ``in_()`` /
+    ``not_in()`` (empty, or with ``None`` in the list), ``tuple_().in_()``,
+    ``is_()`` / ``is_not()``, ``startswith()`` / ``endswith()``,
+    arithmetic including ``/`` and ``%``, string concatenation, and
+    constructs the evaluator can't handle, such as ``case()`` and
+    ``between()``.  The mapped class has integer, numeric, string, boolean
+    and date columns with some NULLs; all rows are loaded into the Session
+    first, and some seeds expire attributes or whole objects.  Each
+    statement is run with ``synchronize_session`` set to ``"evaluate"``,
+    ``"fetch"`` and ``"auto"``, then the objects in the Session are
+    compared with the rows in the database.  Checks that the statement:
+
+    * **where**: updates or deletes in the Session the objects whose rows
+      its WHERE criteria matched in the database, and no others
+    * **values**: leaves the objects it updated with the database's values
+    * **raise**: doesn't raise with one ``synchronize_session`` setting but
+      not with another.  ``"evaluate"`` raising "Could not evaluate current
+      criteria in Python" is documented; such seeds are reported as
+      invalid, naming the construct it couldn't evaluate
+
+    The database's semantics are the reference, and this runs against
+    SQLite only.  Semantics that differ between backends are out of scope,
+    for example Oracle treating ``''`` as NULL, or division by zero (NULL
+    on SQLite, an error on PostgreSQL); the generator avoids expressions
+    whose result depends on them.  The order in which SQLAlchemy evaluates
+    SET values depends on ``PYTHONHASHSEED``, so the workflow sets it to
+    ``0``; replay with ``PYTHONHASHSEED=0`` to see the same results.
+
 
 Bugs found
 ----------

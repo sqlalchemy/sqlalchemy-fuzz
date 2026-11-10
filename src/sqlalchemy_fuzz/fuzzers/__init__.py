@@ -30,6 +30,7 @@ A fuzzer is a module providing:
 
 """
 
+from . import orm_evaluate
 from . import orm_loading
 
-FUZZERS = {fuzzer.NAME: fuzzer for fuzzer in (orm_loading,)}
+FUZZERS = {fuzzer.NAME: fuzzer for fuzzer in (orm_loading, orm_evaluate)}
