@@ -106,6 +106,9 @@ against SQLAlchemy ``main`` and ``rel_2_0``, and does two things:
   the fixed range has not reached.  A failure only here is more likely an
   existing bug than a new one.
 
+A push to ``main`` that changes the fuzzers also runs the fixed range,
+without filing issues, so a new or changed fuzzer gets a run right away.
+
 It can also be run by hand from the Actions tab, or with::
 
     gh workflow run fuzz.yaml -R sqlalchemy/sqlalchemy-fuzz \

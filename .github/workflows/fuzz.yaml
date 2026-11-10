@@ -7,6 +7,10 @@ name: Fuzz
 # src/sqlalchemy_fuzz/issues.py).  see README.rst for why this runs every
 # week.
 #
+# a push to main that changes the fuzzers also runs them, on the fixed
+# seeds only and without filing issues, so a new or changed fuzzer gets a
+# run to link to right away.
+#
 # run from the Actions tab or with:
 #
 #   gh workflow run fuzz.yaml -R sqlalchemy/sqlalchemy-fuzz \
@@ -15,6 +19,13 @@ on:
   schedule:
     # mondays at 06:00 UTC
     - cron: "0 6 * * 1"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - ".github/workflows/fuzz.yaml"
   workflow_dispatch:
     inputs:
       seeds:
@@ -32,6 +43,12 @@ on:
 
 permissions:
   contents: read
+
+# a newer push supersedes a run started by an older one
+concurrency:
+  group: >-
+    ${{ github.event_name == 'push' && 'fuzz-push' || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   fuzz:
