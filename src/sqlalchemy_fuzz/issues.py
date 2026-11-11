@@ -6,7 +6,9 @@ wrote.  To keep a misbehaving fuzzer from flooding the tracker:
 * there is at most one open issue per fuzzer and check, found by its
   label, e.g. ``orm-loading:repeat``; a check that fails again gets a
   comment on that issue, not a new one
-* at most ``--max-new`` issues are opened per run
+* each fuzzer opens at most ``--max-new`` new issues per run, so one
+  fuzzer failing many checks can't keep another's findings from being
+  filed
 
 An issue tracks the SQLAlchemy issues it links to, as
 ``sqlalchemy/sqlalchemy#NNNN`` in its body or comments, or by being
@@ -248,7 +250,7 @@ def file_issues(summaries, gh, run_url, max_new, refs_tested):
     # branch tested, not if the job for one branch failed
     refs_tested = set(refs_tested)
 
-    new = 0
+    new = collections.Counter()
     status = 0
     for key in sorted(ran):
         fuzzer, check = key
@@ -300,10 +302,11 @@ def file_issues(summaries, gh, run_url, max_new, refs_tested):
             gh.comment(number, "Still failing.\n\n" + body)
             if PASSING_LABEL in labels:
                 gh.edit_labels(number, remove=[PASSING_LABEL])
-        elif new >= max_new:
+        elif new[fuzzer] >= max_new:
             print(
-                f"{label}: failing, but --max-new {max_new} issues were "
-                "already opened in this run; not opening another",
+                f"{label}: failing, but {fuzzer} already opened "
+                f"--max-new {max_new} issues in this run; not opening "
+                "another",
                 file=sys.stderr,
             )
             status = 1
@@ -328,7 +331,7 @@ def file_issues(summaries, gh, run_url, max_new, refs_tested):
                 intro + "\n" + body,
                 [FINDING_LABEL, label],
             )
-            new += 1
+            new[fuzzer] += 1
             print(f"{label}: failing, opened {url}")
     return status
 
@@ -360,7 +363,7 @@ def main(argv=None):
         "--max-new",
         type=int,
         default=4,
-        help="most issues to open in one run (default 4)",
+        help="most new issues each fuzzer opens in one run (default 4)",
     )
     parser.add_argument(
         "--dry-run",
