@@ -39,7 +39,10 @@ loops
 
 The result compared is the object graph after accessing everything,
 which lazy loads whatever the strategies under test didn't load: the
-rows of the statement (in order if it has a total ORDER BY), then,
+rows of the statement (in order if it has an ORDER BY, which is always
+unique per row: after a join to a collection it includes the joined
+entity's id, as SQLAlchemy requires a unique ORDER BY for
+``subqueryload()`` with LIMIT / OFFSET), then,
 breadth first from the rows to a fixed depth so that the self-referential
 and back-referencing relationships terminate, each object's class,
 identity and column values and the identities in each relationship (in
@@ -906,14 +909,27 @@ def build_stmt(classes, spec, opts):
     if spec["distinct"]:
         stmt = stmt.distinct()
 
+    # a join to a collection repeats the root's rows, so ordering by the
+    # root alone isn't unique per row; with LIMIT / OFFSET that leaves
+    # subqueryload's copy of the statement free to pick a different
+    # window, which SQLAlchemy documents as needing a unique ORDER BY
+    # (https://github.com/sqlalchemy/sqlalchemy/issues/3650).  DISTINCT
+    # de-duplicates the root's rows, so the root alone is unique there.
+    tiebreak = (
+        (target.id,)
+        if join and join["key"] not in SCALARS and not spec["distinct"]
+        else ()
+    )
     order = spec["order"]
     if order == "pk":
-        stmt = stmt.order_by(root.id)
+        stmt = stmt.order_by(root.id, *tiebreak)
     elif order == "pk_desc":
-        stmt = stmt.order_by(root.id.desc())
+        stmt = stmt.order_by(root.id.desc(), *tiebreak)
     elif order == "col":
         fam = family(base)
-        stmt = stmt.order_by(getattr(root, UCOL[fam]).desc(), root.id)
+        stmt = stmt.order_by(
+            getattr(root, UCOL[fam]).desc(), root.id, *tiebreak
+        )
     elif order == "related":
         fam = family(join["target"])
         stmt = stmt.order_by(
